@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>足球轨迹模拟器</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: "Microsoft YaHei", Arial, sans-serif;
+      background: linear-gradient(180deg, #aee2ff 0%, #eaf8ff 55%, #8bd36b 56%, #54b948 100%);
+      min-height: 100vh;
+      color: #1f2937;
+      overflow-x: hidden;
+    }
+
+    .app {
+      width: min(1100px, 94vw);
+      margin: 24px auto;
+    }
+
+    .panel {
+      background: rgba(255, 255, 255, 0.92);
+      border-radius: 18px;
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.16);
+      padding: 20px;
+      margin-bottom: 18px;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      text-align: center;
+      font-size: 30px;
+    }
+
+    .desc {
+      margin: 0 0 18px;
+      text-align: center;
+      color: #475569;
+    }
+
+    .form {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 14px;
+      align-items: end;
+    }
+
+    label {
+      display: block;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+
+    input {
+      width: 100%;
+      padding: 11px 12px;
+      border: 1px solid #cbd5e1;
+      border-radius: 10px;
+      font-size: 16px;
+      outline: none;
+    }
+
+    input:focus {
+      border-color: #2563eb;
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+    }
+
+    button {
+      height: 44px;
+      border: 0;
+      border-radius: 12px;
+      background: #2563eb;
+      color: white;
+      font-size: 16px;
+      font-weight: 800;
+      cursor: pointer;
+      transition: 0.2s;
+    }
+
+    button:hover {
+      transform: translateY(-1px);
+      background: #1d4ed8;
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+      margin-top: 16px;
+    }
+
+    .stat {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      padding: 10px;
+      text-align: center;
+    }
+
+    .stat strong {
+      display: block;
+      font-size: 18px;
+      color: #0f172a;
+    }
+
+    .stage {
+      position: relative;
+      height: 560px;
+      background: linear-gradient(180deg, rgba(184, 230, 255, 0.65), rgba(246, 253, 255, 0.25));
+      border-radius: 20px;
+      border: 3px solid rgba(255, 255, 255, 0.7);
+      overflow: hidden;
+      box-shadow: inset 0 -90px 0 rgba(70, 171, 66, 0.72), 0 12px 30px rgba(0, 0, 0, 0.14);
+    }
+
+    canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    .hint {
+      position: absolute;
+      left: 18px;
+      top: 16px;
+      background: rgba(255, 255, 255, 0.78);
+      border-radius: 12px;
+      padding: 10px 13px;
+      font-size: 14px;
+      color: #334155;
+      line-height: 1.6;
+      backdrop-filter: blur(6px);
+    }
+
+    @media (max-width: 760px) {
+      .form {
+        grid-template-columns: 1fr;
+      }
+
+      .stats {
+        grid-template-columns: 1fr 1fr;
+      }
+
+      .stage {
+        height: 440px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="panel">
+      <h1>⚽ 足球轨迹模拟器</h1>
+      <p class="desc">输入初速度和发射角度，点击模拟后，动漫小人会把球踢出去并追踪足球飞行轨迹。</p>
+
+      <div class="form">
+        <div>
+          <label for="speed">初速度 v₀（m/s）</label>
+          <input id="speed" type="number" value="28" min="1" max="80" step="1" />
+        </div>
+        <div>
+          <label for="angle">角度 θ（°）</label>
+          <input id="angle" type="number" value="38" min="1" max="89" step="1" />
+        </div>
+        <div>
+          <label for="gravity">重力加速度 g（m/s²）</label>
+          <input id="gravity" type="number" value="9.8" min="1" max="20" step="0.1" />
+        </div>
+        <button onclick="startSimulation()">开始模拟</button>
+      </div>
+
+      <div class="stats">
+        <div class="stat">飞行时间<strong id="flightTime">-- s</strong></div>
+        <div class="stat">最大高度<strong id="maxHeight">-- m</strong></div>
+        <div class="stat">水平距离<strong id="range">-- m</strong></div>
+        <div class="stat">当前速度<strong id="currentSpeed">-- m/s</strong></div>
+      </div>
+    </div>
+
+    <div class="stage">
+      <div class="hint">
+        公式：x = v₀cosθ · t，y = v₀sinθ · t - 1/2gt²<br />
+        动画会自动缩放，保证完整轨迹显示在画布中。
+      </div>
+      <canvas id="canvas"></canvas>
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d");
+
+    let W = 0;
+    let H = 0;
+    let animationId = null;
+    let startTime = null;
+    let sim = null;
+
+    function resizeCanvas() {
+      const rect = canvas.getBoundingClientRect();
+      canvas.width = Math.floor(rect.width * window.devicePixelRatio);
+      canvas.height = Math.floor(rect.height * window.devicePixelRatio);
+      ctx.setTransform(window.devicePixelRatio, 0, 0, window.devicePixelRatio, 0, 0);
+      W = rect.width;
+      H = rect.height;
+      drawIdle();
+    }
+
+    window.addEventListener("resize", resizeCanvas);
+
+    function clamp(value, min, max) {
+      return Math.max(min, Math.min(max, value));
+    }
+
+    function startSimulation() {
+      cancelAnimationFrame(animationId);
+
+      const v0 = clamp(Number(document.getElementById("speed").value) || 28, 1, 80);
+      const angleDeg = clamp(Number(document.getElementById("angle").value) || 38, 1, 89);
+      const g = clamp(Number(document.getElementById("gravity").value) || 9.8, 1, 20);
+      const angle = angleDeg * Math.PI / 180;
+
+      const vx = v0 * Math.cos(angle);
+      const vy = v0 * Math.sin(angle);
+      const flightTime = 2 * vy / g;
+      const maxHeight = vy * vy / (2 * g);
+      const range = vx * flightTime;
+
+      document.getElementById("speed").value = v0;
+      document.getElementById("angle").value = angleDeg;
+      document.getElementById("gravity").value = g;
+
+      document.getElementById("flightTime").textContent = flightTime.toFixed(2) + " s";
+      document.getElementById("maxHeight").textContent = maxHeight.toFixed(2) + " m";
+      document.getElementById("range").textContent = range.toFixed(2) + " m";
+
+      const groundY = H - 92;
+      const originX = 105;
+      const originY = groundY - 20;
+
+      const scaleX = (W - 170) / Math.max(range, 1);
+      const scaleY = (groundY - 80) / Math.max(maxHeight, 1);
+      const scale = Math.min(scaleX, scaleY) * 0.92;
+
+      sim = {
+        v0, angleDeg, g, vx, vy, flightTime, maxHeight, range,
+        groundY, originX, originY, scale,
+        durationMs: Math.max(2600, Math.min(7200, flightTime * 850)),
+        trail: []
+      };
+
+      startTime = performance.now();
+      animate(startTime);
+    }
+
+    function animate(now) {
+      if (!sim) return;
+
+      const elapsed = now - startTime;
+      const progress = clamp(elapsed / sim.durationMs, 0, 1);
+      const t = progress * sim.flightTime;
+
+      const xMeter = sim.vx * t;
+      const yMeter = sim.vy * t - 0.5 * sim.g * t * t;
+
+      const ballX = sim.originX + xMeter * sim.scale;
+      const ballY = sim.originY - yMeter * sim.scale;
+
+      const currentVy = sim.vy - sim.g * t;
+      const currentSpeed = Math.sqrt(sim.vx * sim.vx + currentVy * currentVy);
+      document.getElementById("currentSpeed").textContent = currentSpeed.toFixed(2) + " m/s";
+
+      sim.trail.push({ x: ballX, y: ballY });
+      if (sim.trail.length > 260) sim.trail.shift();
+
+      drawScene(ballX, ballY, progress);
+
+      if (progress < 1) {
+        animationId = requestAnimationFrame(animate);
+      } else {
+        drawScene(sim.originX + sim.range * sim.scale, sim.originY, 1, true);
+      }
+    }
+
+    function drawScene(ballX, ballY, progress, finished = false) {
+      ctx.clearRect(0, 0, W, H);
+
+      drawSky();
+      drawField();
+      drawGoal();
+      drawTrajectory();
+      drawPlayer(progress);
+      drawBall(ballX, ballY, progress);
+      drawShadow(ballX, progress);
+
+      if (finished) {
+        drawFinishText(ballX);
+      }
+    }
+
+    function drawSky() {
+      const gradient = ctx.createLinearGradient(0, 0, 0, H);
+      gradient.addColorStop(0, "#b9e8ff");
+      gradient.addColorStop(0.58, "#effbff");
+      gradient.addColorStop(1, "#86cf65");
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, W, H);
+
+      ctx.fillStyle = "rgba(255,255,255,0.8)";
+      drawCloud(W * 0.68, 78, 1.1);
+      drawCloud(W * 0.28, 112, 0.85);
+    }
+
+    function drawCloud(x, y, s) {
+      ctx.beginPath();
+      ctx.arc(x, y, 20 * s, 0, Math.PI * 2);
+      ctx.arc(x + 22 * s, y - 10 * s, 26 * s, 0, Math.PI * 2);
+      ctx.arc(x + 50 * s, y, 21 * s, 0, Math.PI * 2);
+      ctx.arc(x + 25 * s, y + 11 * s, 24 * s, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    function drawField() {
+      const groundY = sim ? sim.groundY : H - 92;
+
+      ctx.fillStyle = "#45ae43";
+      ctx.fillRect(0, groundY, W, H - groundY);
+
+      ctx.strokeStyle = "rgba(255,255,255,0.7)";
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(0, groundY + 36);
+      ctx.lineTo(W, groundY + 5);
+      ctx.stroke();
+
+      for (let i = 0; i < W; i += 42) {
+        ctx.strokeStyle = "rgba(255,255,255,0.22)";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(i, groundY);
+        ctx.lineTo(i - 35, H);
+        ctx.stroke();
+      }
+    }
+
+    function drawGoal() {
+      if (!sim) return;
+
+      const goalX = Math.min(W - 90, sim.originX + sim.range * sim.scale + 30);
+      const goalY = sim.groundY - 76;
+
+      ctx.strokeStyle = "white";
+      ctx.lineWidth = 5;
+      ctx.strokeRect(goalX, goalY, 68, 76);
+
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = "rgba(255,255,255,0.72)";
+      for (let i = 1; i < 4; i++) {
+        ctx.beginPath();
+        ctx.moveTo(goalX + i * 17, goalY);
+        ctx.lineTo(goalX + i * 17, goalY + 76);
+        ctx.stroke();
+      }
+      for (let j = 1; j < 4; j++) {
+        ctx.beginPath();
+        ctx.moveTo(goalX, goalY + j * 19);
+        ctx.lineTo(goalX + 68, goalY + j * 19);
+        ctx.stroke();
+      }
+    }
+
+    function drawTrajectory() {
+      if (!sim) return;
+
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = "rgba(239, 68, 68, 0.78)";
+      ctx.beginPath();
+
+      for (let i = 0; i <= 120; i++) {
+        const t = sim.flightTime * i / 120;
+        const x = sim.vx * t;
+        const y = sim.vy * t - 0.5 * sim.g * t * t;
+        const px = sim.originX + x * sim.scale;
+        const py = sim.originY - y * sim.scale;
+
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      }
+      ctx.stroke();
+
+      ctx.fillStyle = "rgba(239, 68, 68, 0.18)";
+      for (const p of sim.trail) {
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    function drawPlayer(progress = 0) {
+      const groundY = sim ? sim.groundY : H - 92;
+      const x = sim ? sim.originX - 48 : 60;
+      const y = groundY - 6;
+
+      const kick = Math.sin(Math.min(progress * 8, Math.PI));
+      const bodyTilt = -0.25 * kick;
+
+      ctx.save();
+      ctx.translate(x, y);
+
+      // head
+      ctx.fillStyle = "#ffd7a8";
+      ctx.beginPath();
+      ctx.arc(0, -88, 17, 0, Math.PI * 2);
+      ctx.fill();
+
+      // hair
+      ctx.fillStyle = "#1f2937";
+      ctx.beginPath();
+      ctx.arc(-4, -96, 14, Math.PI, Math.PI * 2);
+      ctx.fill();
+
+      // eyes
+      ctx.fillStyle = "#111827";
+      ctx.beginPath();
+      ctx.arc(5, -90, 2, 0, Math.PI * 2);
+      ctx.fill();
+
+      // body
+      ctx.save();
+      ctx.rotate(bodyTilt);
+      ctx.fillStyle = "#ef4444";
+      roundRect(ctx, -15, -70, 30, 42, 8);
+      ctx.fill();
+
+      // shirt number
+      ctx.fillStyle = "white";
+      ctx.font = "bold 15px Arial";
+      ctx.textAlign = "center";
+      ctx.fillText("10", 0, -43);
+
+      // arm
+      ctx.strokeStyle = "#ffd7a8";
+      ctx.lineWidth = 8;
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(-13, -59);
+      ctx.lineTo(-35, -47 - kick * 14);
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(13, -59);
+      ctx.lineTo(30, -72 + kick * 10);
+      ctx.stroke();
+      ctx.restore();
+
+      // legs
+      ctx.strokeStyle = "#1f2937";
+      ctx.lineWidth = 9;
+      ctx.lineCap = "round";
+
+      // support leg
+      ctx.beginPath();
+      ctx.moveTo(-8, -30);
+      ctx.lineTo(-14, -3);
+      ctx.stroke();
+
+      // kicking leg
+      ctx.beginPath();
+      ctx.moveTo(8, -30);
+      ctx.lineTo(28 + kick * 35, -12 - kick * 20);
+      ctx.stroke();
+
+      // shoes
+      ctx.strokeStyle = "#111827";
+      ctx.lineWidth = 7;
+      ctx.beginPath();
+      ctx.moveTo(-16, -3);
+      ctx.lineTo(-31, -3);
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(28 + kick * 35, -12 - kick * 20);
+      ctx.lineTo(44 + kick * 38, -10 - kick * 20);
+      ctx.stroke();
+
+      // sweat / action mark
+      if (progress < 0.25) {
+        ctx.strokeStyle = "#2563eb";
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(24, -102);
+        ctx.quadraticCurveTo(42, -116, 54, -102);
+        ctx.stroke();
+      }
+
+      ctx.restore();
+    }
+
+    function drawBall(x, y, progress) {
+      const r = 13;
+      const spin = progress * 18;
+
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(spin);
+
+      ctx.fillStyle = "white";
+      ctx.beginPath();
+      ctx.arc(0, 0, r, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.strokeStyle = "#111827";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      ctx.fillStyle = "#111827";
+      ctx.beginPath();
+      for (let i = 0; i < 5; i++) {
+        const a = -Math.PI / 2 + i * 2 * Math.PI / 5;
+        const px = Math.cos(a) * 6;
+        const py = Math.sin(a) * 6;
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+      ctx.fill();
+
+      for (let i = 0; i < 5; i++) {
+        const a = i * 2 * Math.PI / 5;
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(a) * 7, Math.sin(a) * 7);
+        ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+        ctx.stroke();
+      }
+
+      ctx.restore();
+    }
+
+    function drawShadow(ballX, progress) {
+      if (!sim) return;
+      const shadowY = sim.groundY + 9;
+      const size = 18 + 12 * Math.sin(progress * Math.PI);
+      ctx.fillStyle = "rgba(0,0,0,0.18)";
+      ctx.beginPath();
+      ctx.ellipse(ballX, shadowY, size, 6, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    function drawFinishText(ballX) {
+      ctx.fillStyle = "rgba(255,255,255,0.9)";
+      roundRect(ctx, Math.min(ballX - 90, W - 240), 28, 220, 50, 14);
+      ctx.fill();
+
+      ctx.fillStyle = "#0f172a";
+      ctx.font = "bold 20px Microsoft YaHei, Arial";
+      ctx.textAlign = "center";
+      ctx.fillText("模拟完成！", Math.min(ballX + 20, W - 130), 60);
+    }
+
+    function drawIdle() {
+      ctx.clearRect(0, 0, W, H);
+      sim = {
+        groundY: H - 92,
+        originX: 105,
+        originY: H - 112,
+        trail: [],
+        range: 0,
+        scale: 1
+      };
+      drawSky();
+      drawField();
+      drawPlayer(0);
+      drawBall(150, H - 112, 0);
+      ctx.fillStyle = "rgba(255,255,255,0.85)";
+      roundRect(ctx, W / 2 - 170, 190, 340, 74, 16);
+      ctx.fill();
+      ctx.fillStyle = "#0f172a";
+      ctx.font = "bold 22px Microsoft YaHei, Arial";
+      ctx.textAlign = "center";
+      ctx.fillText("输入参数，点击开始模拟", W / 2, 235);
+      sim = null;
+    }
+
+    function roundRect(ctx, x, y, w, h, r) {
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.lineTo(x + w - r, y);
+      ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+      ctx.lineTo(x + w, y + h - r);
+      ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+      ctx.lineTo(x + r, y + h);
+      ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+      ctx.lineTo(x, y + r);
+      ctx.quadraticCurveTo(x, y, x + r, y);
+      ctx.closePath();
+    }
+
+    resizeCanvas();
+  </script>
+</body>
+</html>
